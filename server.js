@@ -227,15 +227,20 @@ app.post('/api/tts', async (req, res) => {
       const rawSpeaker = speaker || 'manisha';
       const liteSpeaker = v2SpeakerMap[rawSpeaker] || 'manisha';
       console.log(`[TTS Route] Lite mode — bulbul:v2 speaker: ${rawSpeaker} → ${liteSpeaker}`);
-      const lightRes = await client.textToSpeech.convert({
+      const lightRes = await axios.post('https://api.sarvam.ai/text-to-speech', {
         text: cleanText,
         target_language_code: "en-IN",
         speaker: liteSpeaker,
         speech_sample_rate: 16000,
         enable_preprocessing: false,
         model: "bulbul:v2"
+      }, {
+        headers: {
+          'api-subscription-key': process.env.SARVAM_API_KEY,
+          'Content-Type': 'application/json'
+        }
       });
-      const lightAudio = lightRes.audios?.[0];
+      const lightAudio = lightRes.data?.audios?.[0];
       if (!lightAudio) throw new Error("No audio data received from Sarvam (Lite)");
       return res.json({ audioBase64: lightAudio });
     }
@@ -248,15 +253,20 @@ app.post('/api/tts', async (req, res) => {
     }
 
     console.log(`[TTS Route] Requesting Sarvam voice using bulbul:v3: ${targetSpeaker}...`);
-    const response = await client.textToSpeech.convert({
+    const response = await axios.post('https://api.sarvam.ai/text-to-speech', {
       text: cleanText,
       target_language_code: "en-IN",
       speaker: targetSpeaker,
-      speech_sample_rate: 16000,  // Lower = faster generation, still crisp
-      enable_preprocessing: false, // Skip preprocessing — saves 200-400ms per call
+      speech_sample_rate: 16000,
+      enable_preprocessing: false,
       model: "bulbul:v3"
+    }, {
+      headers: {
+        'api-subscription-key': process.env.SARVAM_API_KEY,
+        'Content-Type': 'application/json'
+      }
     });
-    const base64Audio = response.audios?.[0];
+    const base64Audio = response.data?.audios?.[0];
     if (!base64Audio) throw new Error("No audio data received from Sarvam");
     res.json({ audioBase64: base64Audio });
   } catch (error) {
@@ -1424,13 +1434,15 @@ Recent exchanges:\n${recentTranscripts.map(t => `${t.speaker}: ${t.text}`).join(
 ${vocabularyInstruction}
 Reply in first person tone. Continue the debate in medium length based on the following user input:
 "${question}"`;
-    const response = await client.chat.completions({
+    const response = await axios.post('https://api.sarvam.ai/v1/chat/completions', {
+      model: "sarvam-105b-conversations",
       messages: [{ role: 'user', content: context }],
       max_tokens: 250,
-      temperature: 0.5,
-      reasoning_effort: null
+      temperature: 0.5
+    }, {
+      headers: { 'api-subscription-key': process.env.SARVAM_API_KEY, 'Content-Type': 'application/json' }
     });
-    let answer = response.choices?.[0]?.message?.content || "No response from AI.";
+    let answer = response.data?.choices?.[0]?.message?.content || "No response from AI.";
     answer = answer.replace(/<think>[\s\S]*?<\/think>/gi, '');
     answer = answer.replace(/<think>[\s\S]*/gi, '');
     answer = answer.trim();
@@ -1476,11 +1488,17 @@ Rules:
 
 Speech:\n${aiText}`;
     const [userRes, aiRes] = await Promise.all([
-      client.chat.completions({ messages: [{ role: 'user', content: userPrompt }], max_tokens: 150, temperature: 0.3, reasoning_effort: null }),
-      client.chat.completions({ messages: [{ role: 'user', content: aiPrompt }], max_tokens: 150, temperature: 0.3, reasoning_effort: null })
+      axios.post('https://api.sarvam.ai/v1/chat/completions', {
+        model: "sarvam-105b-conversations",
+        messages: [{ role: 'user', content: userPrompt }], max_tokens: 150, temperature: 0.3
+      }, { headers: { 'api-subscription-key': process.env.SARVAM_API_KEY, 'Content-Type': 'application/json' } }),
+      axios.post('https://api.sarvam.ai/v1/chat/completions', {
+        model: "sarvam-105b-conversations",
+        messages: [{ role: 'user', content: aiPrompt }], max_tokens: 150, temperature: 0.3
+      }, { headers: { 'api-subscription-key': process.env.SARVAM_API_KEY, 'Content-Type': 'application/json' } })
     ]);
-    let userSummary = (userRes?.choices?.[0]?.message?.content) ? userRes.choices[0].message.content.trim() : "";
-    let aiSummary = (aiRes?.choices?.[0]?.message?.content) ? aiRes.choices[0].message.content.trim() : "";
+    let userSummary = userRes.data?.choices?.[0]?.message?.content?.trim() || "";
+    let aiSummary = aiRes.data?.choices?.[0]?.message?.content?.trim() || "";
 
     userSummary = userSummary.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*/gi, '').trim();
     aiSummary = aiSummary.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*/gi, '').trim();
@@ -1610,14 +1628,17 @@ Return ONLY a valid JSON object matching this structure (no markdown fences, no 
     if (userTranscript.trim()) {
       try {
         const input = `Debate Topic: ${topic}\nUser Role: ${determinedUserRole.toUpperCase()}\nUser Transcript: ${userTranscript}`;
-        const response = await client.chat.completions({
+        const response = await axios.post('https://api.sarvam.ai/v1/chat/completions', {
+          model: "sarvam-105b-conversations",
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: input }
           ]
+        }, {
+          headers: { 'api-subscription-key': process.env.SARVAM_API_KEY, 'Content-Type': 'application/json' }
         });
 
-        let reply = response?.choices?.[0]?.message?.content || "";
+        let reply = response.data?.choices?.[0]?.message?.content || "";
         reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, '');
         reply = reply.replace(/<think>[\s\S]*/gi, '');
         reply = reply.replace(/```json|```/g, '').trim();
@@ -2077,14 +2098,15 @@ Example:
 Speech to analyze:
 ${transcript}`;
 
-    const response = await client.chat.completions({
-      messages: [{ role: 'user', content: prompt }],
+    const response = await axios.post('https://api.sarvam.ai/v1/chat/completions', {
       model: "sarvam-105b-conversations",
+      messages: [{ role: 'user', content: prompt }],
       max_tokens: 200,
-      temperature: 0.3,
-      reasoning_effort: null
+      temperature: 0.3
+    }, {
+      headers: { 'api-subscription-key': process.env.SARVAM_API_KEY, 'Content-Type': 'application/json' }
     });
-    let reply = response.choices?.[0]?.message?.content?.trim() || "[]";
+    let reply = response.data?.choices?.[0]?.message?.content?.trim() || "[]";
 
     // 1. Remove thinking tags and anything in between them (case-insensitive, dotall)
     reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, '');
@@ -2515,12 +2537,14 @@ Role: ${role}
 Teammate said: "${userInput}"
 Suggest strategic ideas, questions to consider, or relevant points. start by hara krishna. ${vocabularyInstruction}`;
 
-    const response = await client.chat.completions({
-      messages: [{ role: 'user', content: prompt }],
-      reasoning_effort: null
+    const response = await axios.post('https://api.sarvam.ai/v1/chat/completions', {
+      model: "sarvam-105b-conversations",
+      messages: [{ role: 'user', content: prompt }]
+    }, {
+      headers: { 'api-subscription-key': process.env.SARVAM_API_KEY, 'Content-Type': 'application/json' }
     });
 
-    let result = response.choices?.[0]?.message?.content || 'No response from Sarvam AI';
+    let result = response.data?.choices?.[0]?.message?.content || 'No response from Sarvam AI';
     result = result.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*/gi, '').trim();
     res.json({ result });
   } catch (err) {
@@ -2549,15 +2573,17 @@ app.post('/api/summarize', authenticateToken, async (req, res) => {
   const prompt = `Summarize this text in 1-2 short sentences, max 50 characters: "${text}"`;
 
   try {
-    const response = await client.chat.completions({
+    const response = await axios.post('https://api.sarvam.ai/v1/chat/completions', {
+      model: "sarvam-105b-conversations",
       messages: [
         { role: 'system', content: 'You are an AI that summarizes text concisely.' },
         { role: 'user', content: prompt }
-      ],
-      reasoning_effort: null
+      ]
+    }, {
+      headers: { 'api-subscription-key': process.env.SARVAM_API_KEY, 'Content-Type': 'application/json' }
     });
 
-    let summary = response.choices?.[0]?.message?.content || 'No summary generated.';
+    let summary = response.data?.choices?.[0]?.message?.content || 'No summary generated.';
     summary = summary.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*/gi, '').trim();
     res.json({ summary });
   } catch (err) {
@@ -2582,15 +2608,17 @@ app.post('/api/factcheck', authenticateToken, async (req, res) => {
   const prompt = `You are a fact-checking AI. Verify the accuracy of the following text and provide a concise assessment of its factual correctness, including any corrections or clarifications if needed: "${text}"`;
 
   try {
-    const response = await client.chat.completions({
+    const response = await axios.post('https://api.sarvam.ai/v1/chat/completions', {
+      model: "sarvam-105b-conversations",
       messages: [
         { role: 'system', content: 'You are an AI that verifies facts accurately.' },
         { role: 'user', content: prompt }
-      ],
-      reasoning_effort: null
+      ]
+    }, {
+      headers: { 'api-subscription-key': process.env.SARVAM_API_KEY, 'Content-Type': 'application/json' }
     });
 
-    let result = response.choices?.[0]?.message?.content || 'No fact-check results available.';
+    let result = response.data?.choices?.[0]?.message?.content || 'No fact-check results available.';
     result = result.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*/gi, '').trim();
     res.json({ result });
   } catch (err) {
