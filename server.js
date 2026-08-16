@@ -1505,7 +1505,11 @@ app.post('/api/generate-debate-topic', authenticateToken, async (req, res) => {
   }
   try {
     const prompt = `Generate only one thought-provoking debate topic with out ' " ' based on : "${interest}".`;
-    const response = await client.chat.completions({ messages: [{ role: 'user', content: prompt }], reasoning_effort: null });
+    const response = await client.chat.completions({
+      messages: [{ role: 'user', content: prompt }],
+      model: "sarvam-105b-conversations",
+      reasoning_effort: null
+    });
     let generatedTopic = response?.choices?.[0]?.message?.content?.trim() || "";
     generatedTopic = generatedTopic.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*/gi, '').trim();
     generatedTopic = generatedTopic.replace(/^["']|["']$/g, '').trim();
