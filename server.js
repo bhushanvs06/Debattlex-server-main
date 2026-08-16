@@ -1505,12 +1505,16 @@ app.post('/api/generate-debate-topic', authenticateToken, async (req, res) => {
   }
   try {
     const prompt = `Generate only one thought-provoking debate topic with out ' " ' based on : "${interest}".`;
-    const response = await client.chat.completions({
-      messages: [{ role: 'user', content: prompt }],
+    const response = await axios.post('https://api.sarvam.ai/v1/chat/completions', {
       model: "sarvam-105b-conversations",
-      reasoning_effort: null
+      messages: [{ role: 'user', content: prompt }]
+    }, {
+      headers: {
+        'api-subscription-key': process.env.SARVAM_API_KEY,
+        'Content-Type': 'application/json'
+      }
     });
-    let generatedTopic = response?.choices?.[0]?.message?.content?.trim() || "";
+    let generatedTopic = response.data?.choices?.[0]?.message?.content?.trim() || "";
     generatedTopic = generatedTopic.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*/gi, '').trim();
     generatedTopic = generatedTopic.replace(/^["']|["']$/g, '').trim();
     if (generatedTopic.startsWith('\\boxed{') && generatedTopic.endsWith('}')) {
@@ -1932,18 +1936,22 @@ app.post('/api/generateAISpeech', authenticateToken, async (req, res) => {
 
     const userPrompt = `Topic: "${topic}"\nRole: ${role.toUpperCase()} (${team === 'prop' ? 'Proposition' : 'Opposition'})\nPrep: "${trimmedPrep}"\nRecent speeches to rebut:\n"${recentSummaries}"\n\nDeliver a persuasive 30-second speech:`;
 
-    const response = await client.chat.completions({
+    const response = await axios.post('https://api.sarvam.ai/v1/chat/completions', {
+      model: "sarvam-105b-conversations",
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
       ],
-      model: "sarvam-105b-conversations",
       max_tokens: 250,
-      temperature: 0.5,
-      reasoning_effort: null
+      temperature: 0.5
+    }, {
+      headers: {
+        'api-subscription-key': process.env.SARVAM_API_KEY,
+        'Content-Type': 'application/json'
+      }
     });
 
-    let transcript = response.choices?.[0]?.message?.content?.trim() || "";
+    let transcript = response.data?.choices?.[0]?.message?.content?.trim() || "";
 
     // 1. Remove thinking tags and anything in between them (case-insensitive, dotall)
     transcript = transcript.replace(/<think>[\s\S]*?<\/think>/gi, '');
