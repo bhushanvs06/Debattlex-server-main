@@ -2933,7 +2933,7 @@ app.post('/api/mentor-chat', authenticateToken, async (req, res) => {
   }
 
   const parseJsonResponse = (text) => {
-    let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*/gi, '').trim();
     if (cleaned.startsWith('```')) {
       cleaned = cleaned.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/, '');
     }
@@ -3007,8 +3007,16 @@ Do NOT include any <think> tags or internal reasoning outputs in your response. 
       content: `The user asks: "${question}"`
     });
 
-    const initialRes = await client.chat.completions({ messages });
-    const rawText = initialRes.choices?.[0]?.message?.content || "{}";
+    const initialRes = await axios.post('https://api.sarvam.ai/v1/chat/completions', {
+      model: "sarvam-105b-conversations",
+      messages: messages
+    }, {
+      headers: {
+        'api-subscription-key': process.env.SARVAM_API_KEY,
+        'Content-Type': 'application/json'
+      }
+    });
+    const rawText = initialRes.data.choices?.[0]?.message?.content || "{}";
 
     let data;
     try {
@@ -3017,7 +3025,7 @@ Do NOT include any <think> tags or internal reasoning outputs in your response. 
       console.warn("JSON parse failed, falling back to raw response formatting:", e);
       data = {
         request_data: false,
-        response: rawText.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/[*#]/g, '').trim(),
+        response: rawText.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*/gi, '').replace(/[*#]/g, '').trim(),
         important_notes_to_save: []
       };
     }
@@ -3134,16 +3142,22 @@ Return ONLY this JSON format:
   "important_notes_to_save": ["Any new long-term summary note to save about this conversation"] // empty array if nothing new to save
 }
 `;
-      const secondRes = await client.chat.completions({
+      const secondRes = await axios.post('https://api.sarvam.ai/v1/chat/completions', {
+        model: "sarvam-105b-conversations",
         messages: [{ role: 'user', content: secondPrompt }]
+      }, {
+        headers: {
+          'api-subscription-key': process.env.SARVAM_API_KEY,
+          'Content-Type': 'application/json'
+        }
       });
-      const secondRawText = secondRes.choices?.[0]?.message?.content || "{}";
+      const secondRawText = secondRes.data.choices?.[0]?.message?.content || "{}";
       try {
         data = parseJsonResponse(secondRawText);
       } catch (e) {
         console.warn("JSON parse failed on second response:", e);
         data = {
-          response: secondRawText.replace(/[*#]/g, '').trim(),
+          response: secondRawText.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*/gi, '').replace(/[*#]/g, '').trim(),
           important_notes_to_save: []
         };
       }
