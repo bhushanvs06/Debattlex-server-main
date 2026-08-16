@@ -2686,7 +2686,7 @@ Summarize the transcript into exactly three key points to highlight in the main 
     const fetchResponse = await fetch(process.env.SARVAM_API_URL, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.SARVAM_API_KEY}`,
+        'api-subscription-key': process.env.SARVAM_API_KEY,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
